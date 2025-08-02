@@ -8,10 +8,10 @@ INSTALLATEUR POWERSHELL AVEC FENÊTRE GUI ET TÂCHE PLANIFIÉE
 2. Compilation en .exe
    Depuis le dossier InstallateurScript, lancez :
 
-   pyinstaller --onefile --noconsole --add-data "listApplication.ps1;." agent_windows_zaiko_0.0.1.py
+   pyinstaller --onefile --noconsole --add-data "listApplication.ps1;." installer.py
 
 3. Fichier de sortie :
-   - ./dist/agent_windows_zaiko_0.0.1.exe
+   - ./dist/installer.exe
 
 4. Comportement :
    - Ouvre une interface graphique
@@ -22,4 +22,4 @@ INSTALLATEUR POWERSHELL AVEC FENÊTRE GUI ET TÂCHE PLANIFIÉE
 
 5. Conseils :
    - Exécuter le .exe en tant qu’**Administrateur**
-   - Modifier `listApplication.ps1` selon vos besoins métiers
+   - Modifier `script.ps1` selon vos besoins métiers

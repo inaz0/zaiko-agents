@@ -1,5 +1,5 @@
 #récupération des secrets et autres infos de configuration
-Get-Content .env | foreach {
+Get-Content C:\ProgramData\CyberFacile\Zaiko\.env | foreach {
   $name, $value = $_.split('=')
   if ([string]::IsNullOrWhiteSpace($name) -or $name.Contains('#')) {
     # skip empty or comment line in ENV file
@@ -8,63 +8,74 @@ Get-Content .env | foreach {
   Set-Content env:\$name $value
 }
 
-$bytes = [System.IO.File]::ReadAllBytes("C:\ProgramData\CyberFacile\Zaiko\secret.bin")
-$decrypted = [System.Security.Cryptography.ProtectedData]::Unprotect(
-    $bytes, $null,
-    [System.Security.Cryptography.DataProtectionScope]::CurrentUser
+$secret = $Env:SECRET
+# 1. Récupération des applications, conversion explicite en objets simples
+$applications = @()
+
+$registryPaths = @(
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
 )
-$secret = [System.Text.Encoding]::UTF8.GetString($decrypted)
 
-
-#récupération de la liste des applications
-$application_list = Get-WmiObject -Class Win32_Product  | Select-Object Name, Version, Vendor, InstallDate, PackageName, IdentifyingNumber, URLUpdateInfo, ProductID, URLInfoAbout | ConvertTo-Json -Depth 10 -Compress
-$application_list = $application_list -replace '\\u0027', "'"
-#Ajouter le serial number
-$serial_number = (Get-WmiObject -class win32_bios).SerialNumber
-
-#Calcul de la clé de contrôle
-# Valeurs d'entrée
-$data = $application_list
-$key = $secret
-
-# Encodage en bytes
-$keyBytes = [System.Text.Encoding]::UTF8.GetBytes($secret)
-$dataBytes = [System.Text.Encoding]::UTF8.GetBytes($data)
-
-# Création de l'objet HMAC
-$hmacsha256 = New-Object System.Security.Cryptography.HMACSHA256
-$hmacsha256.Key = $keyBytes
-
-# Calcul du hash
-$hashBytes = $hmacsha256.ComputeHash($dataBytes)
-
-# Conversion en hexadécimal
-$signature = -join ($hashBytes | ForEach-Object { "{0:x2}" -f $_ })
-
-
-$application_list = $application_list | ConvertFrom-Json
-
-
-#Création de la structure du JSON
-$json = @{
-serial_number = $serial_number
-os = 'windows'
-hmac = $signature
-client_id = $Env:CLIENT_ID
-device_name = $env:COMPUTERNAME
+foreach ($path in $registryPaths) {
+    if (Test-Path $path) {
+        Get-ChildItem $path | ForEach-Object {
+            $app = Get-ItemProperty $_.PSPath
+            if ($app.DisplayName) {
+                $applications += [PSCustomObject]@{
+                    Name              = $app.DisplayName
+                    Version           = $app.DisplayVersion
+                    Vendor            = $app.Publisher
+                    InstallDate       = $app.InstallDate
+                    PackageName       = ''
+                    IdentifyingNumber = ''
+                    URLUpdateInfo     = ''
+                    ProductID         = ''
+                    URLInfoAbout      = $app.URLInfoAbout
+                }
+            }
+        }
+    }
 }
 
-#On ajoute nos applications à notre objet
-$json | Add-Member -MemberType NoteProperty -Name "applications" -Value $application_list
+# 2. JSON brut compressé pour la signature
+$app_json_raw = $applications | ConvertTo-Json -Depth 10 -Compress
 
-$application_list = $json | ConvertTo-Json -Depth 10 -Compress
-$application_list = $application_list -replace '\\u0027', "'"
+$app_json_raw = $app_json_raw -replace '\\u0027', "'"
 
-#sous linux : sudo dmidecode -s system-serial-number
+# 3. Calcul de la signature
+$key = [System.Text.Encoding]::UTF8.GetBytes($Env:SECRET)
+$data = [System.Text.Encoding]::UTF8.GetBytes($app_json_raw)
 
-#envoi des données pour traitement
-Invoke-WebRequest -Uri $Env:DESTINATION_URL -ContentType "application/json" -Method POST -Body $application_list
+$hmac = New-Object System.Security.Cryptography.HMACSHA256
+$hmac.Key = $key
+$signature = -join ($hmac.ComputeHash($data) | ForEach-Object { "{0:x2}" -f $_ })
 
+# 4. Récupération du numéro de série
+$serial_number = (Get-WmiObject -Class Win32_BIOS).SerialNumber
 
-#for debug only
-#Write-Output $application_list
+# 5. Création de l’objet final
+$json = @{
+    serial_number = $serial_number
+    os            = 'windows'
+    hmac          = $signature
+    client_id     = $Env:CLIENT_ID
+    device_name   = $env:COMPUTERNAME
+    applications  = @{
+        value = $applications
+        Count = $applications.Count
+    }
+}
+
+# 6. Encodage JSON final
+$final_json = $json | ConvertTo-Json -Depth 10 -Compress
+
+$final_json = $final_json -replace '\\u0027', "'"
+# 7. Envoi
+$utf8NoBOM = New-Object System.Text.UTF8Encoding $False
+Invoke-WebRequest -Uri $Env:DESTINATION_URL `
+  -Method POST `
+  -ContentType "application/json; charset=utf-8" `
+  -Body $utf8NoBOM.GetBytes($final_json)
+#Write-Output $final_json

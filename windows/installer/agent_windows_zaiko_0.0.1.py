@@ -4,16 +4,15 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox
 import sys
 import ctypes
-import win32crypt
 
 # === Configuration ===
 APP_FOLDER = r"C:\ProgramData\CyberFacile\Zaiko"
 SCRIPT_NAME = "listApplication.ps1"
 ENV_FILE = ".env"
-SECRET_FILE = "secret.bin"
+VBS_FILE = "run_silent.vbs"
 TASK_NAME = "ZAIKO - CyberFacile - DailyScript"
 
-# === Fonctions système ===
+# === Fonctions ===
 
 def is_admin():
     try:
@@ -36,21 +35,20 @@ def copy_script():
     with open(source_path, "r") as src, open(dest_path, "w") as dst:
         dst.write(src.read())
 
-def write_env(var1):
+def write_env(var1, var2):
     env_path = os.path.join(APP_FOLDER, ENV_FILE)
     with open(env_path, "w") as f:
-        f.write(f"DESTINATION_URL=zaiko.cyber-facile.fr\n")
+        f.write("DESTINATION_URL=https://zaiko.cyber-facile.fr/api/applications\n")
         f.write(f"CLIENT_ID={var1}\n")
+        f.write(f"SECRET={var2}\n")
 
-def write_encrypted_secret(secret):
-    encrypted = win32crypt.CryptProtectData(
-        secret.encode("utf-8"),
-        "description", None, None, None, 0
-    )
-    secret_path = os.path.join(APP_FOLDER, SECRET_FILE)
-    with open(secret_path, "wb") as f:
-        f.write(encrypted)
-
+def create_vbs_launcher():
+    vbs_path = os.path.join(APP_FOLDER, VBS_FILE)
+    ps_path = os.path.join(APP_FOLDER, SCRIPT_NAME)
+    with open(vbs_path, "w") as vbs:
+        vbs.write('Set WshShell = CreateObject("Wscript.Shell")\n')
+        vbs.write(f'WshShell.Run "powershell.exe -ExecutionPolicy Bypass -File ""{ps_path}""", 0, False\n')
+    return vbs_path
 
 def task_exists(task_name):
     result = subprocess.run(["schtasks", "/Query", "/TN", task_name], capture_output=True, text=True)
@@ -61,8 +59,8 @@ def create_scheduled_task():
         messagebox.showinfo("Info", f"La tâche '{TASK_NAME}' existe déjà.")
         return
 
-    script_path = os.path.join(APP_FOLDER, SCRIPT_NAME)
-    command = f'powershell.exe -ExecutionPolicy Bypass -File "{script_path}"'
+    vbs_path = create_vbs_launcher()
+    command = f'wscript.exe "{vbs_path}"'
     result = subprocess.run([
         "schtasks", "/Create",
         "/SC", "DAILY",
@@ -76,7 +74,7 @@ def create_scheduled_task():
     if result.returncode != 0:
         raise Exception(f"Erreur lors de la création de la tâche planifiée :\n{result.stderr.strip()}")
 
-# === Interface graphique ===
+# === Programme principal ===
 
 def main():
     if not is_admin():
@@ -97,10 +95,9 @@ def main():
     try:
         ensure_directory()
         copy_script()
-        write_env(var1)
-        write_encrypted_secret(var2)
+        write_env(var1, var2)
         create_scheduled_task()
-        messagebox.showinfo("Succès", "Installation réussie. Le script sera exécuté chaque jour à 10h.")
+        messagebox.showinfo("Succès", "Installation réussie. Le script sera exécuté chaque jour à 10h en mode totalement silencieux.")
     except Exception as e:
         messagebox.showerror("Échec", str(e))
 
