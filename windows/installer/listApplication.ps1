@@ -12,6 +12,8 @@ $secret = $Env:SECRET
 # 1. Récupération des applications, conversion explicite en objets simples
 $applications = @()
 
+$windowsVersion = Get-CimInstance win32_operatingsystem | % caption
+
 $registryPaths = @(
     "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
     "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -66,6 +68,7 @@ $json = @{
         value = $applications
         Count = $applications.Count
     }
+	os_version		  = $windowsVersion
 }
 
 # 6. Encodage JSON final
