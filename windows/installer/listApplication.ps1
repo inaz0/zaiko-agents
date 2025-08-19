@@ -1,3 +1,46 @@
+# Vérifie si le script a déjà tourné aujourd'hui
+$logFile = "$env:ProgramData\CyberFacile\Zaiko\last_run.txt"
+$today = (Get-Date).ToString("yyyy-MM-dd")
+
+if (Test-Path $logFile) {
+    $last = Get-Content $logFile
+    if ($last -eq $today) {
+        Write-Output "Le script a déjà été exécuté aujourd'hui. Fin."
+        exit
+    }
+}
+
+# Vérifie la connexion Internet (10 tentatives max)
+function Test-Internet {
+    try {
+        $ping = Test-Connection -ComputerName "8.8.8.8" -Count 1 -Quiet
+        if ($ping) {
+            $web = Invoke-WebRequest -Uri "https://www.google.com" -UseBasicParsing -TimeoutSec 5
+            return $true
+        }
+    } catch {
+        return $false
+    }
+    return $false
+}
+
+$connected = $false
+for ($i = 1; $i -le 10; $i++) {
+    if (Test-Internet) {
+        $connected = $true
+        break
+    }
+    Start-Sleep -Seconds 10
+}
+
+if (-not $connected) {
+    Write-Output "Pas de connexion Internet après 10 essais. Abandon."
+    exit
+}
+
+# Enregistre la date du jour comme dernière exécution
+$today | Out-File -Encoding ascii -FilePath $logFile
+
 #récupération des secrets et autres infos de configuration
 Get-Content C:\ProgramData\CyberFacile\Zaiko\.env | foreach {
   $name, $value = $_.split('=')
