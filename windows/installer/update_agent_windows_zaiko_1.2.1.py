@@ -53,15 +53,34 @@ def create_scheduled_task():
     command = f'wscript.exe "{vbs_path}"'
     result = subprocess.run([
         "schtasks", "/Create",
-        "/SC", "ONSTART",
+        "/SC", "ONLOGON",
         "/TN", TASK_NAME,
         "/TR", command,
         "/RL", "HIGHEST",
-        "/F"
+        "/F",
+        "/RU",  os.getlogin()
     ], capture_output=True, text=True)
 
     if result.returncode != 0:
         raise Exception(f"Erreur création tâche : {result.stderr.strip()}")
+
+def set_task_conditions():
+    try:
+        ps_script = f'''
+        $task = Get-ScheduledTask -TaskName "{TASK_NAME}"
+        $settings = $task.Settings
+
+        # Désactiver les contraintes liées à la batterie
+        $settings.DisallowStartIfOnBatteries = $false
+        $settings.StopIfGoingOnBatteries = $false
+
+        # Appliquer les nouveaux paramètres
+        Set-ScheduledTask -TaskName "{TASK_NAME}" -Settings $settings
+        '''
+        subprocess.run(["powershell.exe", "-Command", ps_script], capture_output=True)
+    except Exception as e:
+        print(f"[⚠] Impossible de modifier les conditions d'alimentation : {e}")
+
 
 def main():
     if not is_admin():
@@ -83,6 +102,7 @@ def main():
         copy_script()
         delete_scheduled_task()
         create_scheduled_task()
+        set_task_conditions()
         messagebox.showinfo("Succès", "✅ Mise à jour appliquée avec succès.")
     except Exception as e:
         messagebox.showerror("Erreur", f"❌ Erreur lors de la mise à jour :\n{str(e)}")
