@@ -71,11 +71,12 @@ def create_scheduled_task():
     command = f'wscript.exe "{vbs_path}"'
     result = subprocess.run([
         "schtasks", "/Create",
-        "/SC", "ONSTART",
+        "/SC", "ONLOGON",
         "/TN", TASK_NAME,
         "/TR", command,
         "/RL", "HIGHEST",
-        "/F"
+        "/F",
+        "/RU",  os.getlogin()
     ], capture_output=True, text=True)
 
     if result.returncode != 0:
